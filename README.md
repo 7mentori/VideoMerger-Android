@@ -97,8 +97,6 @@ gradle wrapper --gradle-version 9.6.0 --distribution-type bin
 
 ### 2. 設定 Release 簽章
 
-本次已另行建立本機 Release keystore：`VideoMerger-release.jks`。請把它保存到安全且長期不會移動的位置，不要上傳 GitHub，也不要放進專案 ZIP。
-
 建議將以下屬性放在使用者層級的 `%USERPROFILE%\.gradle\gradle.properties`（不是公開專案檔）。將路徑改成 keystore 真正存放位置，密碼請使用隨附的簽章資訊檔：
 
 ```properties

@@ -79,8 +79,6 @@
 | compileSdk / targetSdk | 37 |
 | minSdk | 31 |
 
-AGP 9 預設內建 Kotlin；本專案為使用獨立 Kotlin 2.4.21 plugin，設定 `android.builtInKotlin=false`。這是 AGP 9 的相容切換設定，未來升級至 AGP 10 前需再遷移。
-
 API 37 在本文件日期的 Android SDK 文件中仍列為 Preview 平台。若需以 API 37 編譯，請使用支援該 SDK 的 Android Studio，並透過 SDK Manager 安裝相應平台；不要把 API 37 Preview 誤認為已正式穩定發布的 Android 平台。
 
 ## Windows 建置步驟

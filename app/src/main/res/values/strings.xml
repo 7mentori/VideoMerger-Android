@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">影片合併器</string>
+    <string name="notification_channel_name">影片合併工作</string>
+    <string name="notification_channel_description">顯示目前影片合併工作狀態</string>
+</resources>

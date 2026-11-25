@@ -23,6 +23,13 @@ object VideoInspector {
         val frameRate: Int? = null,
         val formatSignature: String? = null
     )
+	
+	fun normalizeFrameRate(frameRate: Int?): Int? {
+		return when (frameRate) {
+			29, 30 -> 30
+			else -> frameRate
+		}
+	}
 
     fun inspect(context: Context, uri: Uri): Inspection {
         val extractor = MediaExtractor()
@@ -133,7 +140,7 @@ object VideoInspector {
     ): String {
         return buildString {
             append("VIDEO{")
-            append(formatTrackSignature(video, true, frameRate))
+            append(formatTrackSignature(video, true,  normalizeFrameRate(frameRate)))
             append("};AUDIO{")
             append(formatTrackSignature(audio, false, null))
             append("}")

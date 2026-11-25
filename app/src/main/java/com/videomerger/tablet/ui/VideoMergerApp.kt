@@ -141,6 +141,10 @@ fun VideoMergerApp(viewModel: MainViewModel) {
     val analysis by viewModel.analysis.collectAsStateWithLifecycle()
     val isAnalyzing by viewModel.isAnalyzing.collectAsStateWithLifecycle()
     val selectedDates by viewModel.selectedDates.collectAsStateWithLifecycle()
+	val selectedClipUris by viewModel.selectedClipUris.collectAsStateWithLifecycle()
+	val scanProgressPercent by viewModel.scanProgressPercent.collectAsStateWithLifecycle()
+	val scanScannedFiles by viewModel.scanScannedFiles.collectAsStateWithLifecycle()
+	val scanTotalFiles by viewModel.scanTotalFiles.collectAsStateWithLifecycle()
     val customClips by viewModel.customClips.collectAsStateWithLifecycle()
     val customIssues by viewModel.customIssues.collectAsStateWithLifecycle()
     val isBusy by viewModel.isBusy.collectAsStateWithLifecycle()
@@ -215,12 +219,22 @@ fun VideoMergerApp(viewModel: MainViewModel) {
         onDispose { activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
-    val light = lightColorScheme(
-        primary = androidx.compose.ui.graphics.Color(0xFF315F9B),
-        secondary = androidx.compose.ui.graphics.Color(0xFF526D8E),
-        background = androidx.compose.ui.graphics.Color(0xFFF7F8FA),
-        surface = androidx.compose.ui.graphics.Color(0xFFFFFFFF)
-    )
+	val light = lightColorScheme(
+		primary = androidx.compose.ui.graphics.Color(0xFFF59E0B),
+		onPrimary = androidx.compose.ui.graphics.Color(0xFFFFFFFF),
+		primaryContainer = androidx.compose.ui.graphics.Color(0xFFFFE8B3),
+		onPrimaryContainer = androidx.compose.ui.graphics.Color(0xFF573600),
+		secondary = androidx.compose.ui.graphics.Color(0xFF16A36A),
+		onSecondary = androidx.compose.ui.graphics.Color(0xFFFFFFFF),
+		secondaryContainer = androidx.compose.ui.graphics.Color(0xFFD8F3E5),
+		onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFF124B35),
+		background = androidx.compose.ui.graphics.Color(0xFFFFF9ED),
+		surface = androidx.compose.ui.graphics.Color(0xFFFFFDF7),
+		surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFFFFFDF7),
+		onSurface = androidx.compose.ui.graphics.Color(0xFF27364A),
+		onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFF667085),
+		error = androidx.compose.ui.graphics.Color(0xFFDC4444)
+	)
     val darkScheme = darkColorScheme(
         primary = androidx.compose.ui.graphics.Color(0xFFA9C8F4),
         secondary = androidx.compose.ui.graphics.Color(0xFFB9CBE3)
@@ -229,10 +243,13 @@ fun VideoMergerApp(viewModel: MainViewModel) {
     MaterialTheme(colorScheme = if (dark) darkScheme else light) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
+				val availableHeight = this.maxHeight
                 val wide = maxWidth >= 760.dp
                 if (wide) {
                     Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                        NavigationRail {
+                        NavigationRail(
+							containerColor = MaterialTheme.colorScheme.surface
+						) {
                             Spacer(Modifier.height(12.dp))
                             MainTab.entries.forEach { tab ->
                                 NavigationRailItem(
@@ -244,7 +261,13 @@ fun VideoMergerApp(viewModel: MainViewModel) {
                             }
                         }
                         Column(Modifier.weight(1f).fillMaxSize()) {
-                            if (runState.isRunning) RunProgressCard(runState) { showStopDialog = true }
+                            if (runState.isRunning) {
+								RunProgressCard(
+									state = runState,
+									compact = availableHeight < 760.dp,
+									onStop = { showStopDialog = true }
+								)
+							}
                             MainTabContent(
                                 tab = currentTab,
                                 viewModel = viewModel,
@@ -254,6 +277,10 @@ fun VideoMergerApp(viewModel: MainViewModel) {
                                 analysis = analysis,
                                 isAnalyzing = isAnalyzing,
                                 selectedDates = selectedDates,
+								selectedClipUris = selectedClipUris,
+								scanProgressPercent = scanProgressPercent,
+								scanScannedFiles = scanScannedFiles,
+								scanTotalFiles = scanTotalFiles,
                                 customClips = customClips,
                                 customIssues = customIssues,
                                 isBusy = isBusy,
@@ -272,7 +299,9 @@ fun VideoMergerApp(viewModel: MainViewModel) {
                 } else {
                     Scaffold(
                         bottomBar = {
-                            NavigationBar {
+                            NavigationBar(
+								containerColor = MaterialTheme.colorScheme.surface
+							) {
                                 MainTab.entries.forEach { tab ->
                                     NavigationBarItem(
                                         selected = currentTab == tab,
@@ -285,7 +314,13 @@ fun VideoMergerApp(viewModel: MainViewModel) {
                         }
                     ) { innerPadding ->
                         Column(Modifier.fillMaxSize().padding(innerPadding)) {
-                            if (runState.isRunning) RunProgressCard(runState) { showStopDialog = true }
+                            if (runState.isRunning) {
+								RunProgressCard(
+									state = runState,
+									compact = availableHeight < 760.dp,
+									onStop = { showStopDialog = true }
+								)
+							}
                             MainTabContent(
                                 tab = currentTab,
                                 viewModel = viewModel,
@@ -295,6 +330,10 @@ fun VideoMergerApp(viewModel: MainViewModel) {
                                 analysis = analysis,
                                 isAnalyzing = isAnalyzing,
                                 selectedDates = selectedDates,
+								selectedClipUris = selectedClipUris,
+								scanProgressPercent = scanProgressPercent,
+								scanScannedFiles = scanScannedFiles,
+								scanTotalFiles = scanTotalFiles,
                                 customClips = customClips,
                                 customIssues = customIssues,
                                 isBusy = isBusy,
@@ -379,6 +418,10 @@ private fun MainTabContent(
     analysis: com.videomerger.tablet.model.DailyAnalysis?,
     isAnalyzing: Boolean,
     selectedDates: Set<String>,
+	selectedClipUris: Set<String>,
+	scanProgressPercent: Int?,
+	scanScannedFiles: Int,
+	scanTotalFiles: Int,
     customClips: List<VideoClip>,
     customIssues: List<String>,
     isBusy: Boolean,
@@ -397,7 +440,17 @@ private fun MainTabContent(
             sourceName, sourceUri, sourceAccessible, analysis, onPickSource, modifier
         )
         MainTab.DAILY -> DailyScreen(
-            viewModel, analysis, isAnalyzing, selectedDates, runState, onStartDaily, modifier
+			viewModel = viewModel,
+			analysis = analysis,
+			isAnalyzing = isAnalyzing,
+			selectedDates = selectedDates,
+			selectedClipUris = selectedClipUris,
+			scanProgressPercent = scanProgressPercent,
+			scanScannedFiles = scanScannedFiles,
+			scanTotalFiles = scanTotalFiles,
+			runState = runState,
+			onStart = onStartDaily,
+			modifier = modifier
         )
         MainTab.CUSTOM -> CustomScreen(
             viewModel, customClips, customIssues, isBusy, runState, onPickCustom, onStartCustom, modifier
@@ -420,7 +473,7 @@ private fun OverviewScreen(
     val free = StorageSpace.availableBytes()
     Column(modifier.padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("總覽", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Card(Modifier.fillMaxWidth()) {
+        AppCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("來源資料夾", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(if (sourceUri == null) "尚未選擇來源資料夾" else sourceName, style = MaterialTheme.typography.bodyLarge)
@@ -443,7 +496,7 @@ private fun OverviewScreen(
             MetricCard("影片總數", analysis?.scannedFileCount?.toString() ?: "尚未分析", Modifier.weight(1f))
             MetricCard("日期總數", analysis?.groups?.size?.toString() ?: "尚未分析", Modifier.weight(1f))
         }
-        Card(Modifier.fillMaxWidth()) {
+        AppCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("內部儲存空間", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(Formatters.bytes(free), style = MaterialTheme.typography.headlineSmall)
@@ -460,116 +513,306 @@ private fun DailyScreen(
     analysis: com.videomerger.tablet.model.DailyAnalysis?,
     isAnalyzing: Boolean,
     selectedDates: Set<String>,
+    selectedClipUris: Set<String>,
+    scanProgressPercent: Int?,
+    scanScannedFiles: Int,
+    scanTotalFiles: Int,
     runState: RunUiState,
     onStart: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val groups = analysis?.groups.orEmpty()
     val abnormalFiles = analysis?.abnormalFiles.orEmpty()
-    val selected = groups.filter { it.date.toString() in selectedDates }
-    val selectedClips = selected.flatMap { it.clips }
+    val selectedGroups = groups.filter { it.date.toString() in selectedDates }
+    val selectedClips = selectedGroups.flatMap { group ->
+        group.clips.filter { it.uri.toString() in selectedClipUris }
+    }
     val selectedBytes = selectedClips.sumOf { it.sizeBytes.coerceAtLeast(0L) }
     val free = StorageSpace.availableBytes()
     val canFit = free == null || selectedBytes <= free
+
     var showAbnormal by rememberSaveable { mutableStateOf(false) }
     val expandedDates = remember { mutableStateMapOf<String, Boolean>() }
 
-    Column(modifier.fillMaxSize().padding(horizontal = 18.dp)) {
+    Column(
+        modifier.fillMaxSize().padding(horizontal = 18.dp)
+    ) {
         Row(
-            Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 12.dp),
+            Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("每日合併", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { viewModel.analyzeDaily() }, enabled = !isAnalyzing && !runState.isRunning) {
-                    if (isAnalyzing) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                    else Icon(Icons.Default.Refresh, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (analysis == null) "開始分析" else "重新分析")
+            Text(
+                "每日合併",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            OutlinedButton(
+                onClick = { viewModel.analyzeDaily() },
+                enabled = !isAnalyzing && !runState.isRunning
+            ) {
+                if (isAnalyzing) {
+                    CircularProgressIndicator(
+                        Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(Icons.Default.Refresh, null)
                 }
+                Spacer(Modifier.width(6.dp))
+                Text(if (analysis == null) "開始分析" else "重新分析")
             }
         }
-        if (analysis == null && !isAnalyzing) {
-            EmptyState("尚未分析來源資料夾", "按下「開始分析」後，App 才會掃描所選資料夾第一層的 MP4。")
-        } else if (isAnalyzing) {
-            Card(Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(26.dp))
-                    Spacer(Modifier.width(14.dp))
-                    Text("正在分析影片，請保持 App 開啟…")
+
+        when {
+            analysis == null && !isAnalyzing -> {
+                EmptyState(
+                    "尚未分析來源資料夾",
+                    "按下「開始分析」後，App 才會掃描所選資料夾第一層的 MP4。"
+                )
+            }
+
+            isAnalyzing -> {
+                AppCard(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            if (scanTotalFiles < 0) {
+                                "正在取得檔案清單……"
+                            } else {
+                                "正在掃描影片"
+                            },
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        if (scanTotalFiles >= 0) {
+                            LinearProgressIndicator(
+                                progress = {
+                                    (scanProgressPercent ?: 0) / 100f
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    "$scanScannedFiles / $scanTotalFiles 個檔案",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    "${scanProgressPercent ?: 0}%",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        } else {
+                            LinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        Text(
+                            "正在檢查第一層資料夾中的 MP4，請保持 App 開啟。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
-        } else {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { viewModel.selectAllDates() }) { Text("全選") }
-                TextButton(onClick = { viewModel.clearAllDates() }) { Text("全不選") }
-                TextButton(onClick = { viewModel.invertDates() }) { Text("反向選取") }
-                Spacer(Modifier.weight(1f))
-                Text("${selectedDates.size} / ${groups.size} 日期", style = MaterialTheme.typography.labelLarge)
-            }
-            SummaryCard(
-                title = "本次選取摘要",
-                rows = listOf(
-                    "選取日期" to "${selected.size} 天",
-                    "有效影片" to "${selectedClips.size} 部",
-                    "預估輸出大小" to Formatters.bytes(selectedBytes),
-                    "目前可用空間" to Formatters.bytes(free),
-                    "輸出後預估剩餘" to if (free == null) "無法確認剩餘空間" else Formatters.bytes(free - selectedBytes)
-                ),
-                warning = when {
-                    selected.isEmpty() -> "請至少選取一個日期"
-                    !canFit -> "儲存空間不足，無法開始合併。"
-                    free == null -> "無法確認剩餘空間，開始前會再詢問是否繼續。"
-                    else -> null
+
+            else -> {
+                AppCard(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(7.dp)
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("已選日期")
+                            Text(
+                                "${selectedGroups.size} / ${groups.size} 天",
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("已選影片")
+                            Text(
+                                "${selectedClips.size} 部",
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("預估輸出大小")
+                            Text(
+                                Formatters.bytes(selectedBytes),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Divider()
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                "目前可用空間",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                Formatters.bytes(free),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                "輸出後預估剩餘",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                if (free == null) "無法確認"
+                                else Formatters.bytes(free - selectedBytes),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+
+                        when {
+                            selectedGroups.isEmpty() -> {
+                                Text(
+                                    "至少選取同一天兩部影片，才能合併。",
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            !canFit -> {
+                                Text(
+                                    "儲存空間不足，無法開始合併。",
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            free == null -> {
+                                Text(
+                                    "無法確認剩餘空間，開始前會再詢問是否繼續。",
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
                 }
-            )
-            Button(
-                onClick = onStart,
-                enabled = selected.isNotEmpty() && canFit && !runState.isRunning,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-            ) {
-                Icon(Icons.Default.PlayArrow, null)
-                Spacer(Modifier.width(8.dp))
-                Text("開始合併")
-            }
-            if (runState.finished && runState.mode == MergeMode.DAILY) RunResultsCard(runState)
-            if (groups.none { it.validCount > 0 }) {
-                Text("沒有符合條件的影片", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
-            }
-            Text("日期清單", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(groups, key = { it.date.toString() }) { group ->
-                    DailyGroupCard(
-                        group = group,
-                        checked = group.date.toString() in selectedDates,
-                        expanded = expandedDates[group.date.toString()] == true,
-                        onToggle = { viewModel.setDateSelected(group.date.toString(), it) },
-                        onExpand = { expandedDates[group.date.toString()] = !(expandedDates[group.date.toString()] ?: false) }
-                    )
+
+                Button(
+                    onClick = onStart,
+                    enabled = selectedGroups.isNotEmpty() &&
+                        canFit &&
+                        !runState.isRunning,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp)
+                ) {
+                    Icon(Icons.Default.PlayArrow, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("開始合併")
                 }
-                if (abnormalFiles.isNotEmpty()) {
-                    item {
-                        Card(Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(14.dp)) {
-                                Row(
-                                    Modifier.fillMaxWidth().clickable { showAbnormal = !showAbnormal },
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error)
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("異常檔案（${abnormalFiles.size}）", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                                    Icon(if (showAbnormal) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
-                                }
-                                if (showAbnormal) {
-                                    abnormalFiles.forEach { issue ->
-                                        Divider(Modifier.padding(vertical = 6.dp))
-                                        Text(issue.name, fontWeight = FontWeight.Medium)
-                                        Text(issue.reason, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+
+                Text(
+                    "日期清單",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (runState.finished && runState.mode == MergeMode.DAILY) {
+                        item {
+                            RunResultsCard(runState)
+                        }
+                    }
+
+                    if (groups.none { it.validCount > 0 }) {
+                        item {
+                            Text(
+                                "沒有符合條件的影片",
+                                color = MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    items(groups, key = { it.date.toString() }) { group ->
+                        DailyGroupCard(
+                            group = group,
+                            selectedClipUris = selectedClipUris,
+                            expanded = expandedDates[group.date.toString()] == true,
+                            onClipToggle = { uri, checked ->
+                                viewModel.setClipSelected(uri, checked)
+                            },
+                            onExpand = {
+                                val key = group.date.toString()
+                                expandedDates[key] = !(expandedDates[key] ?: false)
+                            }
+                        )
+                    }
+
+                    if (abnormalFiles.isNotEmpty()) {
+                        item {
+                            AppCard(Modifier.fillMaxWidth()) {
+                                Column(Modifier.padding(14.dp)) {
+                                    Row(
+                                        Modifier.fillMaxWidth().clickable {
+                                            showAbnormal = !showAbnormal
+                                        },
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Warning,
+                                            null,
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            "異常 MP4（${abnormalFiles.size}）",
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Icon(
+                                            if (showAbnormal) Icons.Default.ExpandLess
+                                            else Icons.Default.ExpandMore,
+                                            null
+                                        )
+                                    }
+
+                                    if (showAbnormal) {
+                                        abnormalFiles.forEach { issue ->
+                                            Divider(Modifier.padding(vertical = 6.dp))
+                                            Text(
+                                                issue.name,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            Text(
+                                                issue.reason,
+                                                color = MaterialTheme.colorScheme.error,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -584,44 +827,140 @@ private fun DailyScreen(
 @Composable
 private fun DailyGroupCard(
     group: DailyGroup,
-    checked: Boolean,
+    selectedClipUris: Set<String>,
     expanded: Boolean,
-    onToggle: (Boolean) -> Unit,
+    onClipToggle: (String, Boolean) -> Unit,
     onExpand: () -> Unit
 ) {
-    Card(Modifier.fillMaxWidth()) {
+    val selectedClips = group.clips.filter {
+        it.uri.toString() in selectedClipUris
+    }
+    val selectedBytes = selectedClips.sumOf {
+        it.sizeBytes.coerceAtLeast(0L)
+    }
+    val selectionEnabled = !group.alreadyOutput
+
+    AppCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = checked, onCheckedChange = onToggle, enabled = group.validCount >= 2)
-                Column(Modifier.weight(1f).clickable(onClick = onExpand).padding(vertical = 6.dp)) {
-                    Text(Formatters.date(group.date), fontWeight = FontWeight.SemiBold)
-                    Text("符合條件 ${group.validCount} 部・預估 ${Formatters.bytes(group.estimatedBytes)}", style = MaterialTheme.typography.bodySmall)
+                Column(
+                    Modifier.weight(1f)
+                        .clickable(onClick = onExpand)
+                        .padding(vertical = 5.dp)
+                ) {
+                    Text(
+                        Formatters.date(group.date),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        "已選 ${selectedClips.size} / ${group.validCount} 部・${Formatters.bytes(selectedBytes)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
+
                 if (group.alreadyOutput) {
-                    Text("已輸出", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
-                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "已輸出",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                    Spacer(Modifier.width(6.dp))
                 }
+
                 IconButton(onClick = onExpand) {
-                    Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = "展開")
+                    Icon(
+                        if (expanded) Icons.Default.ExpandLess
+                        else Icons.Default.ExpandMore,
+                        contentDescription = if (expanded) "收合" else "展開"
+                    )
                 }
             }
+
             if (group.hasIneligibleFiles) {
-                Text("此日期包含不符合條件的影片；預設不勾選，只會合併符合條件的影片。", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    group.skipped.firstOrNull { it.name == "當日影片" }?.reason
+                        ?: "當日影片 FPS 不一致，無法合併。",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
+
             if (group.validCount < 2) {
-                Text("有效影片不足兩部，無法合併。", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    "有效影片不足兩部，無法合併。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
+
             if (expanded) {
                 Divider(Modifier.padding(vertical = 6.dp))
-                Text("有效影片：${group.validCount} 部", fontWeight = FontWeight.Medium)
-                Text("符合條件影片總大小：${Formatters.bytes(group.estimatedBytes)}", style = MaterialTheme.typography.bodySmall)
-                if (group.skipped.isNotEmpty()) {
-                    Spacer(Modifier.height(6.dp))
-                    Text("略過 ${group.skipped.size} 部：", fontWeight = FontWeight.Medium)
-                    group.skipped.groupBy { it.reason }.forEach { (reason, items) ->
-                        Text("• $reason：${items.size} 部", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                Text(
+                    "符合條件的影片（${group.validCount} 部）",
+                    fontWeight = FontWeight.Medium
+                )
+
+                group.clips.forEach { clip ->
+                    val uri = clip.uri.toString()
+                    val checked = uri in selectedClipUris
+
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = checked,
+                            onCheckedChange = { onClipToggle(uri, it) },
+                            enabled = selectionEnabled
+                        )
+
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                clip.displayName,
+                                fontWeight = FontWeight.Medium,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                "${Formatters.bytes(clip.sizeBytes)}　${if (clip.durationUs > 0L) Formatters.duration(clip.durationUs / 1000L) else "長度未知"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
+
+                if (group.skipped.isNotEmpty()) {
+                    Divider(Modifier.padding(vertical = 6.dp))
+
+                    Text(
+                        "略過的影片（${group.skipped.size}）",
+                        fontWeight = FontWeight.Medium
+                    )
+
+                    group.skipped.forEach { issue ->
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            Text(
+                                issue.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                issue.reason,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    "符合條件影片總大小：${Formatters.bytes(group.estimatedBytes)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 5.dp)
+                )
             }
         }
     }
@@ -733,9 +1072,13 @@ private fun CustomScreen(
                                     }
                                 )
                             },
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (draggingUri == key) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface
-                        )
+						colors = CardDefaults.cardColors(
+							containerColor = if (draggingUri == key) {
+								MaterialTheme.colorScheme.primaryContainer
+							} else {
+								MaterialTheme.colorScheme.surface
+							}
+						)
                     ) {
                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("${index + 1}", fontWeight = FontWeight.Bold, modifier = Modifier.width(30.dp))
@@ -900,30 +1243,108 @@ private fun SettingsScreen(
 }
 
 @Composable
-private fun RunProgressCard(state: RunUiState, onStop: () -> Unit) {
-    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun RunProgressCard(
+    state: RunUiState,
+    compact: Boolean = false,
+    onStop: () -> Unit
+) {
+    AppCard(
+        Modifier.fillMaxWidth().padding(
+            horizontal = 12.dp,
+            vertical = if (compact) 4.dp else 8.dp
+        ),
+
+    ) {
+        Column(
+            Modifier.padding(if (compact) 9.dp else 14.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(10.dp))
-                Text("影片正在合併中", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                CircularProgressIndicator(
+                    Modifier.size(if (compact) 16.dp else 20.dp),
+                    strokeWidth = 2.dp
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "影片正在合併中",
+                    style = if (compact) MaterialTheme.typography.titleSmall
+                    else MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    "${state.completedJobs}/${state.totalJobs} 項",
+                    style = MaterialTheme.typography.bodySmall
+                )
                 TextButton(onClick = onStop) {
                     Icon(Icons.Default.Stop, null)
                     Text("停止")
                 }
             }
-            Text("請勿切換 App 或離開程式，以免工作中斷或造成輸出失敗。", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            Text("${state.status}　${state.completedJobs}/${state.totalJobs} 項", style = MaterialTheme.typography.bodyMedium)
+
+            if (!compact) {
+                Text(
+                    "請勿切換 App 或離開程式，以免工作中斷或造成輸出失敗。",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    "${state.status}　${state.completedJobs}/${state.totalJobs} 項",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            } else {
+                Text(
+                    state.status,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
             if (state.progressPercent != null) {
-                LinearProgressIndicator(progress = { state.progressPercent / 100f }, modifier = Modifier.fillMaxWidth())
-                Text("整體工作進度 ${state.progressPercent}%", style = MaterialTheme.typography.labelSmall)
-            } else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            if (state.currentLabel.isNotBlank()) Text("目前項目：${state.currentLabel}", style = MaterialTheme.typography.bodySmall)
-            if (state.currentFile.isNotBlank()) Text("目前檔案：${state.currentFile}", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("總經過 ${Formatters.duration(state.elapsedMs)}", style = MaterialTheme.typography.labelSmall)
-                Text("目前項目 ${Formatters.duration(state.currentJobElapsedMs)}", style = MaterialTheme.typography.labelSmall)
-                Text("輸出 ${Formatters.bytes(state.currentOutputBytes)}", style = MaterialTheme.typography.labelSmall)
+                LinearProgressIndicator(
+                    progress = { state.progressPercent / 100f },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "整體工作進度 ${state.progressPercent}%",
+                    style = MaterialTheme.typography.labelSmall
+                )
+            } else {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+
+            if (state.currentLabel.isNotBlank()) {
+                Text(
+                    "目前項目：${state.currentLabel}",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            if (state.currentFile.isNotBlank()) {
+                Text(
+                    "目前檔案：${state.currentFile}",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            if (!compact) {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text(
+                        "總經過 ${Formatters.duration(state.elapsedMs)}",
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                    Text(
+                        "目前項目 ${Formatters.duration(state.currentJobElapsedMs)}",
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                    Text(
+                        "輸出 ${Formatters.bytes(state.currentOutputBytes)}",
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
             }
         }
     }
@@ -934,7 +1355,7 @@ private fun RunResultsCard(state: RunUiState) {
     val context = LocalContext.current
     val successes = state.results.count { it.status == ResultStatus.SUCCESS }
     val failures = state.results.count { it.status != ResultStatus.SUCCESS }
-    Card(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+    AppCard(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("本次合併結果：${state.status}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("成功 $successes　失敗／停止 $failures　總經過 ${Formatters.duration(state.elapsedMs)}")
@@ -967,7 +1388,7 @@ private fun RunResultsCard(state: RunUiState) {
 
 @Composable
 private fun SummaryCard(title: String, rows: List<Pair<String, String>>, warning: String?) {
-    Card(Modifier.fillMaxWidth()) {
+    AppCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             rows.forEach { (label, value) -> SettingsValueRow(label, value) }
@@ -976,15 +1397,28 @@ private fun SummaryCard(title: String, rows: List<Pair<String, String>>, warning
     }
 }
 
+
 @Composable
 private fun SettingsCard(title: String, content: @Composable () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    AppCard(
+        modifier = Modifier.fillMaxWidth(),
+
+    ) {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
             content()
         }
     }
 }
+
 
 @Composable
 private fun SettingsValueRow(label: String, value: String) {
@@ -997,7 +1431,7 @@ private fun SettingsValueRow(label: String, value: String) {
 
 @Composable
 private fun MetricCard(label: String, value: String, modifier: Modifier = Modifier) {
-    Card(modifier) {
+    AppCard(modifier) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -1021,7 +1455,7 @@ private fun StatusLine(text: String, positive: Boolean) {
 
 @Composable
 private fun EmptyState(title: String, description: String) {
-    Card(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+    AppCard(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
         Column(Modifier.fillMaxWidth().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1058,4 +1492,21 @@ private class OpenMultipleVideoDocuments : ActivityResultContract<String, List<U
         if (result.isEmpty()) intent.data?.let(result::add)
         return result.distinct()
     }
+}
+
+
+@Composable
+private fun AppCard(
+    modifier: Modifier = Modifier,
+    containerColor: androidx.compose.ui.graphics.Color =
+        MaterialTheme.colorScheme.surface,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = containerColor
+        ),
+        content = content
+    )
 }

@@ -18,17 +18,15 @@ class DailyAnalyzer(private val context: Context) {
     private val sourceRepository = SafSourceRepository(context)
     private val outputRepository = MediaStoreOutputRepository(context)
 
-    fun analyze(treeUri: Uri): DailyAnalysis {
+    fun analyze(
+        treeUri: Uri,
+        onProgress: (scanned: Int, total: Int) -> Unit = { _, _ -> }
+    ): DailyAnalysis {
         if (!sourceRepository.canReadTree(treeUri)) {
             throw SecurityException(
                 "來源資料夾目前無法存取。請確認記憶卡已連接，再重新選擇來源資料夾。"
             )
         }
-
-        val groupedValid = linkedMapOf<LocalDate, MutableList<VideoClip>>()
-        val groupedSkipped = linkedMapOf<LocalDate, MutableList<ScanIssue>>()
-        val abnormal = mutableListOf<ScanIssue>()
-        var scanned = 0
 
         val children = try {
             sourceRepository.listFirstLevel(treeUri)
@@ -39,48 +37,77 @@ class DailyAnalyzer(private val context: Context) {
             )
         }
 
+        val total = children.size
+        var scanned = 0
+
+        // 檔案清單取得後，先回報一次總數。
+        onProgress(0, total)
+
+        val groupedValid = linkedMapOf<LocalDate, MutableList<VideoClip>>()
+        val groupedSkipped = linkedMapOf<LocalDate, MutableList<ScanIssue>>()
+        val abnormal = mutableListOf<ScanIssue>()
+
         for (child in children) {
-            if (!child.name.endsWith(".mp4", ignoreCase = true)) {
-                abnormal += ScanIssue(child.name, "非 MP4 檔案", child.uri)
-                continue
-            }
+            try {
+                // 只分析 MP4；LRV 及其他副檔名完全忽略。
+                if (!child.name.endsWith(".mp4", ignoreCase = true)) {
+                    continue
+                }
 
-            scanned++
+                val parsed = VideoNameParser.parse(child.name)
 
-            val parsed = VideoNameParser.parse(child.name)
-            if (parsed == null) {
-                abnormal += ScanIssue(
-                    child.name,
-                    "檔名不符合指定格式",
-                    child.uri
-                )
-                continue
-            }
-
-            val inspection = VideoInspector.inspect(context, child.uri)
-
-            val issue = when {
-                !inspection.isReadable ->
-                    inspection.error ?: "檔案無法讀取"
-
-                !inspection.hasAudio ->
-                    "已跳過－無音訊"
-
-                else -> null
-            }
-
-            if (issue == null) {
-                groupedValid.getOrPut(parsed.date) { mutableListOf() } +=
-                    VideoInspector.toClip(
-                        child.uri,
-                        child.name,
-                        child.sizeBytes,
-                        parsed,
-                        inspection
+                if (parsed == null) {
+                    abnormal += ScanIssue(
+                        name = child.name,
+                        reason = "檔名不符合指定格式",
+                        uri = child.uri
                     )
-            } else {
-                groupedSkipped.getOrPut(parsed.date) { mutableListOf() } +=
-                    ScanIssue(child.name, issue, child.uri)
+                    continue
+                }
+
+                val inspection = VideoInspector.inspect(context, child.uri)
+
+                val issue = when {
+                    !inspection.isReadable ->
+                        inspection.error ?: "MP4 檔案無法讀取"
+
+                    !inspection.hasVideo ->
+                        "找不到影片軌道"
+
+                    !inspection.hasAudio ->
+                        "已跳過－無音訊"
+
+                    inspection.frameRate == null ||
+                        inspection.frameRate <= 0 ->
+                        "無法判讀影片 FPS"
+
+                    else -> null
+                }
+
+                if (issue != null) {
+                    groupedSkipped.getOrPut(parsed.date) {
+                        mutableListOf()
+                    } += ScanIssue(
+                        name = child.name,
+                        reason = issue,
+                        uri = child.uri
+                    )
+                    continue
+                }
+
+                groupedValid.getOrPut(parsed.date) {
+                    mutableListOf()
+                } += VideoInspector.toClip(
+                    child.uri,
+                    child.name,
+                    child.sizeBytes,
+                    parsed,
+                    inspection
+                )
+            } finally {
+                // 所有第一層檔案都計入進度，包括被忽略的非 MP4。
+                scanned++
+                onProgress(scanned, total)
             }
         }
 
@@ -99,46 +126,32 @@ class DailyAnalyzer(private val context: Context) {
 
             val skipped = groupedSkipped[date].orEmpty().toMutableList()
 
-            val hasSkippedFiles = skipped.isNotEmpty()
+            // 同一天必須使用相同 FPS；不同日期可以使用不同 FPS。
+			val frameRates = valid.mapNotNull {
+				VideoInspector.normalizeFrameRate(it.frameRate)
+			}.distinct().sorted()
 
-            val hasUnknownFrameRate = valid.any {
-                it.frameRate == null || it.frameRate <= 0
-            }
+            val hasMixedFrameRates = frameRates.size > 1
 
-            val signatures = valid.mapNotNull {
-                it.formatSignature
-            }.distinct()
-
-            val hasMixedFormats =
-                valid.size >= 2 && (
-                    signatures.size > 1 ||
-                    signatures.size != valid.size ||
-                    hasUnknownFrameRate
-                )
-
-            if (hasMixedFormats) {
+            if (hasMixedFrameRates) {
                 skipped += ScanIssue(
                     name = "當日影片",
-                    reason = "影片來源存在多種格式，無法輸出"
+                    reason = "同一天影片 FPS 不一致：${frameRates.joinToString("、")} FPS"
                 )
             }
 
             val alreadyOutput = date in existingDates
 
-            val ineligible =
-                (valid.isNotEmpty() && hasSkippedFiles) ||
-                hasMixedFormats
-
             DailyGroup(
                 date = date,
                 clips = valid,
                 skipped = skipped,
-                hasIneligibleFiles = ineligible,
+                hasIneligibleFiles = hasMixedFrameRates,
                 alreadyOutput = alreadyOutput,
                 defaultSelected =
                     valid.size >= 2 &&
                     !alreadyOutput &&
-                    !ineligible
+                    !hasMixedFrameRates
             )
         }
 
@@ -151,12 +164,8 @@ class DailyAnalyzer(private val context: Context) {
                 add("部分日期的有效影片少於兩部，無法合併")
             }
 
-            if (groups.any { group ->
-                    group.skipped.any {
-                        it.reason == "影片來源存在多種格式，無法輸出"
-                    }
-                }) {
-                add("部分日期的影片格式不一致，無法合併")
+            if (groups.any { it.hasIneligibleFiles }) {
+                add("部分日期的影片 FPS 不一致，無法合併")
             }
         }
 

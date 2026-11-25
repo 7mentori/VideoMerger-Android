@@ -2,12 +2,11 @@
 
 **Package：** `com.videomerger.tablet`  
 **顯示名稱：** 影片合併器  
-**版本：** 1.0.0（versionCode 1）  
+**版本：** 1.0.1（versionCode 2）  
 **最低 Android：** 12 / API 31  
 **compileSdk / targetSdk：** 37  
 **語言／介面：** Kotlin、Jetpack Compose Material 3、繁體中文  
 **執行時網路：** 不需要；Manifest 未宣告 `INTERNET`。
-
 
 ## 專案內容
 
@@ -20,6 +19,8 @@
 ## 主要技術設計
 
 - 來源以 `ACTION_OPEN_DOCUMENT_TREE` / SAF 持續讀取授權；每日分析只掃描第一層。
+- 每日分析提供實際掃描進度，顯示已掃描檔案數、總檔案數及完成百分比。
+- 每日影片依日期分組，可展開查看個別影片，並勾選或取消勾選要合併的影片。
 - 自訂合併用 `ACTION_OPEN_DOCUMENT` 多選影片，保留系統回傳順序，另提供清單排序控制。
 - 只檢查必要的影片／音訊軌道，不解碼、不重新編碼。
 - 合併引擎使用 `MediaExtractor` + `MediaMuxer`，以串流樣本方式寫入；輸出直接建立於 MediaStore `Movies/VideoMerger/`，先設 `IS_PENDING=1`，完成後才發布。
@@ -40,6 +41,19 @@
 - 但同一批待合併影片必須具有相容的影片與音訊格式。
 - 不同解析度、影格率或影音編碼設定的影片，不可混合合併。
 - 若來源影片缺少必要的格式資訊，導致無法確認相容性，也可能拒絕合併。
+
+### 每日合併
+
+- 只分析來源資料夾第一層的 MP4 檔案，副檔名不區分大小寫。
+- `.LRV` 及其他非 MP4 檔案會直接忽略，不列入異常檔案。
+- 檔名不符合指定格式、無法讀取或缺少必要影片資訊的 MP4，會列出檔名及異常原因。
+- 缺少音訊軌道的影片依既有規則標示為「已跳過－無音訊」。
+- 每個日期獨立判斷影片 FPS；同一天的影片 FPS 必須一致，若不一致，該日期無法合併。
+- 不同日期可以使用不同 FPS，不會因為日期之間 FPS 不同而互相影響。
+- 每個日期預設選取符合條件的影片，使用者可以展開日期，自行勾選或取消個別影片。
+- 日期收合或重新展開時，會保留目前的影片選取狀態。
+- 每個日期至少需要選取兩部影片才能進行合併。
+- 日期的選取數量及預估檔案大小會依照目前勾選的影片動態更新。
 
 ### 格式檢查
 
@@ -97,15 +111,15 @@ gradle wrapper --gradle-version 9.6.0 --distribution-type bin
 
 ### 2. 設定 Release 簽章
 
-本次已另行建立本機 Release keystore：`VideoMerger-release.jks`。請把它保存到安全且長期不會移動的位置，不要上傳 GitHub，也不要放進專案 ZIP。
+Release 使用本機 keystore：`VideoMerger-release.jks`。請把它保存到安全且長期不會移動的位置，不要上傳 GitHub，也不要放進專案 ZIP。
 
-建議將以下屬性放在使用者層級的 `%USERPROFILE%\.gradle\gradle.properties`（不是公開專案檔）。將路徑改成 keystore 真正存放位置，密碼請使用隨附的簽章資訊檔：
+建議將以下屬性放在使用者層級的 `%USERPROFILE%\.gradle\gradle.properties`（不是公開專案檔）。將路徑改成 keystore 真正存放位置：
 
 ```properties
 RELEASE_STORE_FILE=C:/Users/你的帳號/secure/VideoMerger-release.jks
-RELEASE_STORE_PASSWORD=請填入隨附密碼
+RELEASE_STORE_PASSWORD=請填入Keystore密碼
 RELEASE_KEY_ALIAS=videomerger-release
-RELEASE_KEY_PASSWORD=請填入隨附密碼
+RELEASE_KEY_PASSWORD=請填入Key密碼
 ```
 
 若沒有設定這四個屬性，`release` variant 將不會套用本機簽章設定。請妥善備份 `.jks` 及密碼；未來更新同一 Package Name 的 App 必須使用同一把簽章金鑰，遺失後不能用新金鑰直接覆蓋更新既有安裝。
@@ -125,7 +139,7 @@ RELEASE_KEY_PASSWORD=請填入隨附密碼
 - Debug：`app\build\outputs\apk\debug\app-debug.apk`
 - Release：`app\build\outputs\apk\release\app-release.apk`
 
-完成後可將 Release APK 改名為 `VideoMerger-release.apk`。**此路徑僅是成功建置後的預期輸出位置；本次沒有產生該 APK。**
+完成後可將 Release APK 改名為 `VideoMerger-release.apk`。
 
 ### 4. Android Studio 開啟
 
@@ -140,6 +154,6 @@ RELEASE_KEY_PASSWORD=請填入隨附密碼
 
 ## 安全與簽章
 
-- `VideoMerger-release.jks` 與密碼檔為私有簽章材料，**未包含在 Android Studio 專案 ZIP**。
+- `VideoMerger-release.jks` 與密碼為私有簽章材料，不可提交至公開版控。
 - 請保留至少兩份離線備份，勿提交至公開版控。
 - App 執行時不要求網路權限；下載 Gradle、Android Plugin 和 dependencies 是建置階段的網路行為，兩者不同。

@@ -47,8 +47,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val analysis = _analysis.asStateFlow()
     private val _isAnalyzing = MutableStateFlow(false)
     val isAnalyzing = _isAnalyzing.asStateFlow()
-    private val _selectedDates = MutableStateFlow<Set<String>>(emptySet())
-    val selectedDates = _selectedDates.asStateFlow()
+	private val _scanProgressPercent = MutableStateFlow<Int?>(null)
+	val scanProgressPercent = _scanProgressPercent.asStateFlow()
+	private val _scanScannedFiles = MutableStateFlow(0)
+	val scanScannedFiles = _scanScannedFiles.asStateFlow()
+	private val _scanTotalFiles = MutableStateFlow(-1)
+	val scanTotalFiles = _scanTotalFiles.asStateFlow()
+	private val _selectedDates = MutableStateFlow<Set<String>>(emptySet())
+	val selectedDates = _selectedDates.asStateFlow()
+	private val _selectedClipUris = MutableStateFlow<Set<String>>(emptySet())
+	val selectedClipUris = _selectedClipUris.asStateFlow()
     private val _customClips = MutableStateFlow<List<VideoClip>>(emptyList())
     val customClips = _customClips.asStateFlow()
     private val _customIssues = MutableStateFlow<List<String>>(emptyList())
@@ -102,8 +110,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _sourceUri.value = uri
                 _sourceName.value = resolveTreeName(uri)
                 _sourceAccessible.value = readable
-                _analysis.value = null
-                _selectedDates.value = emptySet()
+				_analysis.value = null
+				_selectedDates.value = emptySet()
+				_selectedClipUris.value = emptySet()
                 if (!readable) _message.value = "所選來源資料夾目前無法讀取，請重新連接記憶卡或重新授權。"
             }
         }
@@ -123,49 +132,134 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun analyzeDaily() {
-        val uri = _sourceUri.value ?: run {
-            _message.value = "尚未選擇來源資料夾"
-            return
-        }
-        if (_isAnalyzing.value || MergeRuntime.state.value.isRunning) return
-        viewModelScope.launch {
-            _isAnalyzing.value = true
-            _analysis.value = null
-            _selectedDates.value = emptySet()
-            try {
-                val result = withContext(Dispatchers.IO) { DailyAnalyzer(app).analyze(uri) }
-                _analysis.value = result
-                _selectedDates.value = result.groups.filter { it.defaultSelected }.map { it.date.toString() }.toSet()
-                if (result.groups.isEmpty() && result.abnormalFiles.isEmpty()) {
-                    _message.value = "沒有符合條件的影片"
-                }
-            } catch (error: Exception) {
-                _message.value = error.message ?: "分析來源資料夾時發生錯誤"
-            } finally {
-                _isAnalyzing.value = false
-            }
-        }
-    }
+	fun analyzeDaily() {
+		val uri = _sourceUri.value ?: run {
+			_message.value = "尚未選擇來源資料夾"
+			return
+		}
 
-    fun setDateSelected(date: String, selected: Boolean) {
-        _selectedDates.value = if (selected) _selectedDates.value + date else _selectedDates.value - date
-    }
+		if (_isAnalyzing.value || MergeRuntime.state.value.isRunning) return
 
-    fun selectAllDates() {
-        _selectedDates.value = _analysis.value?.groups
-            ?.filter { it.validCount >= 2 }
-            ?.map { it.date.toString() }
-            ?.toSet().orEmpty()
-    }
+		viewModelScope.launch {
+			_isAnalyzing.value = true
+			_analysis.value = null
+			_selectedDates.value = emptySet()
+			_selectedClipUris.value = emptySet()
 
-    fun clearAllDates() { _selectedDates.value = emptySet() }
+			// -1 表示正在取得檔案清單，尚未知道總數。
+			_scanTotalFiles.value = -1
+			_scanScannedFiles.value = 0
+			_scanProgressPercent.value = null
 
-    fun invertDates() {
-        val groups = _analysis.value?.groups.orEmpty().filter { it.validCount >= 2 }
-        val selectable = groups.map { it.date.toString() }.toSet()
-        _selectedDates.value = selectable - _selectedDates.value
-    }
+			try {
+				val result = withContext(Dispatchers.IO) {
+					DailyAnalyzer(app).analyze(uri) { scanned, total ->
+						_scanScannedFiles.value = scanned
+						_scanTotalFiles.value = total
+
+						_scanProgressPercent.value = if (total > 0) {
+							(scanned * 100 / total).coerceIn(0, 100)
+						} else {
+							100
+						}
+					}
+				}
+
+				_analysis.value = result
+
+				// 所有有效影片預設勾選。
+				_selectedClipUris.value = result.groups
+					.filter { it.defaultSelected }
+					.flatMap { it.clips }
+					.map { it.uri.toString() }
+					.toSet()
+
+				// 日期預設選取條件：至少有兩支有效影片，且沒有 FPS 不一致。
+				_selectedDates.value = result.groups
+					.filter { it.defaultSelected }
+					.map { it.date.toString() }
+					.toSet()
+
+				if (result.groups.isEmpty() && result.abnormalFiles.isEmpty()) {
+					_message.value = "沒有符合條件的影片"
+				}
+			} catch (error: Exception) {
+				_message.value = error.message ?: "分析來源資料夾時發生錯誤"
+			} finally {
+				_isAnalyzing.value = false
+			}
+		}
+	}
+
+	fun setDateSelected(date: String, selected: Boolean) {
+		val group = _analysis.value?.groups
+			?.firstOrNull { it.date.toString() == date }
+			?: return
+
+		val current = _selectedClipUris.value.toMutableSet()
+
+		group.clips.forEach { clip ->
+			if (selected) {
+				current.add(clip.uri.toString())
+			} else {
+				current.remove(clip.uri.toString())
+			}
+		}
+
+		_selectedClipUris.value = current
+		updateSelectedDates()
+	}
+
+	fun setClipSelected(uri: String, selected: Boolean) {
+		val current = _selectedClipUris.value.toMutableSet()
+
+		if (selected) {
+			current.add(uri)
+		} else {
+			current.remove(uri)
+		}
+
+		_selectedClipUris.value = current
+		updateSelectedDates()
+	}
+
+	private fun updateSelectedDates() {
+		val selectedUris = _selectedClipUris.value
+
+		_selectedDates.value = _analysis.value?.groups
+			?.filter { group ->
+				group.clips.count { it.uri.toString() in selectedUris } >= 2
+			}
+			?.map { it.date.toString() }
+			?.toSet()
+			.orEmpty()
+	}
+
+	fun selectAllDates() {
+		_selectedClipUris.value = _analysis.value?.groups
+			?.flatMap { it.clips }
+			?.map { it.uri.toString() }
+			?.toSet()
+			.orEmpty()
+
+		updateSelectedDates()
+	}
+
+	fun clearAllDates() {
+		_selectedClipUris.value = emptySet()
+		updateSelectedDates()
+	}
+
+	fun invertDates() {
+		val allUris = _analysis.value?.groups
+			?.flatMap { it.clips }
+			?.map { it.uri.toString() }
+			?.toSet()
+			.orEmpty()
+
+		_selectedClipUris.value = allUris - _selectedClipUris.value
+		updateSelectedDates()
+	}
 
     fun addCustomUris(uris: List<Uri>) {
         if (uris.isEmpty()) return
@@ -236,13 +330,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val analysis = _analysis.value ?: return StartResult.Error("請先開始分析")
         val selected = analysis.groups.filter { it.date.toString() in _selectedDates.value }
         if (selected.isEmpty()) return StartResult.Error("請至少選取一個日期")
-        val jobs = selected.mapNotNull { group ->
-            if (group.clips.size < 2) null else MergeJob(
-                label = group.date.toString(),
-                outputBaseName = "VideoMerger_${group.date}",
-                clips = group.clips
-            )
-        }
+		val selectedUris = _selectedClipUris.value
+
+		val jobs = selected.mapNotNull { group ->
+			val clips = group.clips.filter {
+				it.uri.toString() in selectedUris
+			}
+
+			if (clips.size < 2) null else MergeJob(
+				label = group.date.toString(),
+				outputBaseName = "VideoMerger_${group.date}",
+				clips = clips
+			)
+		}
         if (jobs.isEmpty()) return StartResult.Error("所選日期沒有至少兩部符合條件的影片")
         return startRequest(MergeRequest(MergeMode.DAILY, jobs, sourceTreeUri = _sourceUri.value), allowUnknownSpace)
     }

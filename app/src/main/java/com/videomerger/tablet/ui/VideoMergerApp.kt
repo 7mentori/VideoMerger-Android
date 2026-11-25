@@ -104,6 +104,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.TriStateCheckbox
+import androidx.compose.ui.state.ToggleableState
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.videomerger.tablet.BuildConfig
@@ -758,18 +760,21 @@ private fun DailyScreen(
                     }
 
                     items(groups, key = { it.date.toString() }) { group ->
-                        DailyGroupCard(
-                            group = group,
-                            selectedClipUris = selectedClipUris,
-                            expanded = expandedDates[group.date.toString()] == true,
-                            onClipToggle = { uri, checked ->
-                                viewModel.setClipSelected(uri, checked)
-                            },
-                            onExpand = {
-                                val key = group.date.toString()
-                                expandedDates[key] = !(expandedDates[key] ?: false)
-                            }
-                        )
+						DailyGroupCard(
+							group = group,
+							selectedClipUris = selectedClipUris,
+							expanded = expandedDates[group.date.toString()] == true,
+							onClipToggle = { uri, checked ->
+								viewModel.setClipSelected(uri, checked)
+							},
+							onDateToggle = { selected ->
+								viewModel.setDateSelected(group.date.toString(), selected)
+							},
+							onExpand = {
+								val key = group.date.toString()
+								expandedDates[key] = !(expandedDates[key] ?: false)
+							}
+						)
                     }
 
                     if (abnormalFiles.isNotEmpty()) {
@@ -830,6 +835,7 @@ private fun DailyGroupCard(
     selectedClipUris: Set<String>,
     expanded: Boolean,
     onClipToggle: (String, Boolean) -> Unit,
+    onDateToggle: (Boolean) -> Unit,
     onExpand: () -> Unit
 ) {
     val selectedClips = group.clips.filter {
@@ -838,16 +844,31 @@ private fun DailyGroupCard(
     val selectedBytes = selectedClips.sumOf {
         it.sizeBytes.coerceAtLeast(0L)
     }
-    val selectionEnabled = !group.alreadyOutput
+    val selectionEnabled = true
+	val selectedCount = selectedClips.size
+
+	val dateSelectionState = when {
+		selectedCount == 0 -> ToggleableState.Off
+		group.clips.isNotEmpty() && selectedCount == group.clips.size -> ToggleableState.On
+		else -> ToggleableState.Indeterminate
+	}
 
     AppCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(
-                    Modifier.weight(1f)
-                        .clickable(onClick = onExpand)
-                        .padding(vertical = 5.dp)
-                ) {
+			Row(verticalAlignment = Alignment.CenterVertically) {
+				TriStateCheckbox(
+					state = dateSelectionState,
+					onClick = {
+						onDateToggle(selectedCount != group.clips.size)
+					},
+					enabled = selectionEnabled && group.clips.isNotEmpty()
+				)
+
+				Column(
+					Modifier.weight(1f)
+						.clickable(onClick = onExpand)
+						.padding(vertical = 5.dp)
+				) {
                     Text(
                         Formatters.date(group.date),
                         fontWeight = FontWeight.SemiBold

@@ -81,6 +81,3 @@ Python XML parser 成功解析 Manifest 與資源 XML 共 4 個檔案，並用�
 6. 驗證儲存空間耗盡、手動停止、程序被終止、`IS_PENDING` 殘留及冷啟動清單管理。
 7. 使用至少一組實際 Luna Ultra 原始影片完成相機素材驗證。
 
-## Release 簽章材料
-
-本次另外建立 `VideoMerger-release.jks`，alias 為 `videomerger-release`，並驗證 keystore 可由 `keytool -list` 正常讀取。它尚未被用來簽署 APK，因為本次無法建置 APK。Keystore 和密碼檔另行交付，沒有放入專案 ZIP。

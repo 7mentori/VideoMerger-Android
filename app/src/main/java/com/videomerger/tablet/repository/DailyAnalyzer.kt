@@ -148,10 +148,7 @@ class DailyAnalyzer(private val context: Context) {
                 skipped = skipped,
                 hasIneligibleFiles = hasMixedFrameRates,
                 alreadyOutput = alreadyOutput,
-                defaultSelected =
-                    valid.size >= 2 &&
-                    !alreadyOutput &&
-                    !hasMixedFrameRates
+                defaultSelected = false
             )
         }
 
